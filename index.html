@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Appel Vidéo P2P (Firebase)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .hidden { display: none; }
+        video { transform: scaleX(-1); } /* Effet miroir */
+    </style>
+</head>
+<body class="bg-gray-900 text-white flex flex-col items-center justify-center min-h-screen p-4">
+
+    <!-- Interface de Connexion -->
+    <div id="login" class="w-full max-w-md bg-gray-800 p-6 rounded-xl shadow-xl text-center">
+        <h1 class="text-2xl font-bold mb-4 text-blue-400">Visio P2P 📹</h1>
+        <input id="roomId" type="text" placeholder="Nom du salon (ex: test)" 
+               class="w-full p-3 mb-4 bg-gray-700 rounded outline-none focus:ring-2 focus:ring-blue-500 text-white">
+        <button id="joinBtn" class="w-full bg-blue-600 hover:bg-blue-700 py-3 rounded font-bold transition">
+            Rejoindre
+        </button>
+    </div>
+
+    <!-- Interface Vidéo -->
+    <div id="videoCall" class="hidden w-full max-w-4xl flex-col gap-4">
+        <div class="flex justify-between items-center bg-gray-800 p-3 rounded-lg">
+            <span id="status" class="text-yellow-400 font-mono text-sm">En attente...</span>
+            <button onclick="location.reload()" class="bg-red-600 px-3 py-1 rounded text-sm">Quitter</button>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="relative bg-black rounded-xl overflow-hidden aspect-video shadow-lg">
+                <video id="localVideo" autoplay muted playsinline class="w-full h-full object-cover"></video>
+                <span class="absolute bottom-2 left-2 bg-black/60 px-2 py-1 text-xs rounded">Moi</span>
+            </div>
+            <div class="relative bg-black rounded-xl overflow-hidden aspect-video shadow-lg">
+                <video id="remoteVideo" autoplay playsinline class="w-full h-full object-cover"></video>
+                <span class="absolute bottom-2 left-2 bg-black/60 px-2 py-1 text-xs rounded">Correspondant</span>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        // 1. Importation des modules Firebase (Version compatible CDN)
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getDatabase, ref, set, onValue, push, update, get, child } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+
+        // 2. Ta configuration exacte
+        const firebaseConfig = {
+            apiKey: "AIzaSyBMuMzxCWG98FJG76wUAbJNUXimc4RKn0E",
+            authDomain: "privatevideocall.firebaseapp.com",
+            databaseURL: "https://privatevideocall-default-rtdb.europe-west1.firebasedatabase.app",
+            projectId: "privatevideocall",
+            storageBucket: "privatevideocall.firebasestorage.app",
+            messagingSenderId: "802974624484",
+            appId: "1:802974624484:web:4fd31c99f533c90bc55af1",
+            measurementId: "G-WGW832F810"
+        };
+
+        // 3. Initialisation
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+
+        // Variables WebRTC
+        const servers = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+        const pc = new RTCPeerConnection(servers);
+        let localStream = null;
+        let roomId = null;
+
+        // Éléments DOM
+        const UI = {
+            login: document.getElementById('login'),
+            video: document.getElementById('videoCall'),
+            joinBtn: document.getElementById('joinBtn'),
+            roomId: document.getElementById('roomId'),
+            localVid: document.getElementById('localVideo'),
+            remoteVid: document.getElementById('remoteVideo'),
+            status: document.getElementById('status')
+        };
+
+        // Démarrage
+        UI.joinBtn.onclick = async () => {
+            roomId = UI.roomId.value.trim();
+            if (!roomId) return alert("Nom de salon requis");
+
+            // UI Switch
+            UI.login.classList.add('hidden');
+            UI.video.classList.remove('hidden');
+            UI.video.classList.add('flex');
+
+            // Caméra
+            localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+            UI.localVid.srcObject = localStream;
+            
+            // Ajout des pistes
+            localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+
+            // Réception flux distant
+            pc.ontrack = event => {
+                UI.remoteVid.srcObject = event.streams[0];
+                UI.status.innerText = "✅ Connecté !";
+                UI.status.classList.replace('text-yellow-400', 'text-green-400');
+            };
+
+            joinRoom();
+        };
+
+        // Logique Signalisation (Qui est qui ?)
+        async function joinRoom() {
+            const roomRef = ref(db, 'rooms/' + roomId);
+            const snapshot = await get(roomRef);
+
+            if (snapshot.exists() && snapshot.val().offer) {
+                // --- RÔLE : APPELÉ (Répondant) ---
+                UI.status.innerText = "Appel entrant... Connexion...";
+                handleIceCandidates(false); // false = je suis callee
+
+                const offer = snapshot.val().offer;
+                await pc.setRemoteDescription(new RTCSessionDescription(offer));
+                
+                const answer = await pc.createAnswer();
+                await pc.setLocalDescription(answer);
+
+                // Sauvegarde réponse
+                await update(roomRef, { answer: { type: answer.type, sdp: answer.sdp } });
+
+            } else {
+                // --- RÔLE : APPELANT (Initiateur) ---
+                UI.status.innerText = "Création du salon... Attente...";
+                
+                // Nettoyage préventif si le salon existait
+                await set(roomRef, {}); 
+                
+                handleIceCandidates(true); // true = je suis caller
+
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+
+                // Sauvegarde offre
+                await set(roomRef, { offer: { type: offer.type, sdp: offer.sdp } });
+
+                // Écoute de la réponse
+                const answerRef = child(roomRef, 'answer');
+                onValue(answerRef, (snap) => {
+                    const data = snap.val();
+                    if (!pc.currentRemoteDescription && data) {
+                        const answer = new RTCSessionDescription(data);
+                        pc.setRemoteDescription(answer);
+                    }
+                });
+            }
+        }
+
+        // Gestion des Candidats ICE (Réseau)
+        function handleIceCandidates(isCaller) {
+            const myIceRef = ref(db, `rooms/${roomId}/${isCaller ? 'callerIce' : 'calleeIce'}`);
+            const remoteIceRef = ref(db, `rooms/${roomId}/${isCaller ? 'calleeIce' : 'callerIce'}`);
+
+            // 1. J'envoie mes candidats
+            pc.onicecandidate = event => {
+                if (event.candidate) {
+                    push(myIceRef, event.candidate.toJSON());
+                }
+            };
+
+            // 2. J'écoute les candidats distants
+            onValue(remoteIceRef, (snapshot) => {
+                snapshot.forEach((childSnapshot) => {
+                    const candidate = new RTCIceCandidate(childSnapshot.val());
+                    pc.addIceCandidate(candidate).catch(e => console.log("Erreur ICE", e));
+                });
+            });
+        }
+    </script>
+</body>
+</html>
+
