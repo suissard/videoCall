@@ -3,50 +3,66 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Appel Vidéo P2P (Firebase)</title>
+    <title>Visio & Tchat P2P</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         .hidden { display: none; }
-        video { transform: scaleX(-1); } /* Effet miroir */
+        video { transform: scaleX(-1); } /* Miroir */
+        /* Scrollbar fine pour le tchat */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-thumb { background: #4B5563; border-radius: 3px; }
     </style>
 </head>
-<body class="bg-gray-900 text-white flex flex-col items-center justify-center min-h-screen p-4">
+<body class="bg-gray-900 text-white flex flex-col items-center justify-center min-h-screen p-4 font-sans">
 
-    <!-- Interface de Connexion -->
+    <!-- LOGIN -->
     <div id="login" class="w-full max-w-md bg-gray-800 p-6 rounded-xl shadow-xl text-center">
-        <h1 class="text-2xl font-bold mb-4 text-blue-400">Visio P2P 📹</h1>
-        <input id="roomId" type="text" placeholder="Nom du salon (ex: test)" 
-               class="w-full p-3 mb-4 bg-gray-700 rounded outline-none focus:ring-2 focus:ring-blue-500 text-white">
-        <button id="joinBtn" class="w-full bg-blue-600 hover:bg-blue-700 py-3 rounded font-bold transition">
+        <h1 class="text-2xl font-bold mb-4 text-teal-400">Visio & Tchat 💬</h1>
+        <input id="roomId" type="text" placeholder="Nom du salon (ex: apéro)" 
+               class="w-full p-3 mb-4 bg-gray-700 rounded outline-none focus:ring-2 focus:ring-teal-500 text-white">
+        <button id="joinBtn" class="w-full bg-teal-600 hover:bg-teal-700 py-3 rounded font-bold transition">
             Rejoindre
         </button>
     </div>
 
-    <!-- Interface Vidéo -->
-    <div id="videoCall" class="hidden w-full max-w-4xl flex-col gap-4">
-        <div class="flex justify-between items-center bg-gray-800 p-3 rounded-lg">
-            <span id="status" class="text-yellow-400 font-mono text-sm">En attente...</span>
-            <button onclick="location.reload()" class="bg-red-600 px-3 py-1 rounded text-sm">Quitter</button>
+    <!-- APP INTERFACE -->
+    <div id="appInterface" class="hidden w-full max-w-5xl flex-col md:flex-row gap-4 h-[85vh]">
+        
+        <!-- COLONNE GAUCHE : VIDÉOS -->
+        <div class="flex-1 flex flex-col gap-4">
+            <div class="flex justify-between items-center bg-gray-800 p-3 rounded-lg">
+                <span id="status" class="text-yellow-400 font-mono text-sm">En attente...</span>
+                <button onclick="location.reload()" class="bg-red-600 hover:bg-red-700 px-3 py-1 rounded text-sm transition">Quitter</button>
+            </div>
+            
+            <div class="relative flex-1 bg-black rounded-xl overflow-hidden shadow-lg">
+                <video id="remoteVideo" autoplay playsinline class="w-full h-full object-cover"></video>
+                <div class="absolute bottom-4 right-4 w-32 h-24 bg-gray-800 rounded-lg border-2 border-gray-600 overflow-hidden">
+                    <video id="localVideo" autoplay muted playsinline class="w-full h-full object-cover"></video>
+                </div>
+            </div>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div class="relative bg-black rounded-xl overflow-hidden aspect-video shadow-lg">
-                <video id="localVideo" autoplay muted playsinline class="w-full h-full object-cover"></video>
-                <span class="absolute bottom-2 left-2 bg-black/60 px-2 py-1 text-xs rounded">Moi</span>
+        <!-- COLONNE DROITE : TCHAT -->
+        <div class="w-full md:w-80 bg-gray-800 rounded-xl flex flex-col shadow-lg">
+            <div class="p-3 border-b border-gray-700 font-bold text-gray-300">Tchat Direct 🔒</div>
+            
+            <div id="chatBox" class="flex-1 p-3 overflow-y-auto space-y-2 flex flex-col">
+                <div class="text-center text-xs text-gray-500 mt-auto">En attente de connexion...</div>
             </div>
-            <div class="relative bg-black rounded-xl overflow-hidden aspect-video shadow-lg">
-                <video id="remoteVideo" autoplay playsinline class="w-full h-full object-cover"></video>
-                <span class="absolute bottom-2 left-2 bg-black/60 px-2 py-1 text-xs rounded">Correspondant</span>
+
+            <div class="p-3 border-t border-gray-700 flex gap-2">
+                <input id="msgInput" type="text" placeholder="Message..." disabled
+                       class="flex-1 bg-gray-700 rounded px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-teal-500 disabled:opacity-50">
+                <button id="sendBtn" disabled class="bg-teal-600 hover:bg-teal-700 px-3 py-2 rounded text-sm disabled:opacity-50 transition">➤</button>
             </div>
         </div>
     </div>
 
     <script type="module">
-        // 1. Importation des modules Firebase (Version compatible CDN)
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getDatabase, ref, set, onValue, push, update, get, child } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 
-        // 2. Ta configuration exacte
         const firebaseConfig = {
             apiKey: "AIzaSyBMuMzxCWG98FJG76wUAbJNUXimc4RKn0E",
             authDomain: "privatevideocall.firebaseapp.com",
@@ -58,121 +74,132 @@
             measurementId: "G-WGW832F810"
         };
 
-        // 3. Initialisation
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
 
-        // Variables WebRTC
-        const servers = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
-        const pc = new RTCPeerConnection(servers);
+        const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
         let localStream = null;
+        let dataChannel = null;
         let roomId = null;
 
-        // Éléments DOM
+        // UI Refs
         const UI = {
             login: document.getElementById('login'),
-            video: document.getElementById('videoCall'),
+            app: document.getElementById('appInterface'),
             joinBtn: document.getElementById('joinBtn'),
             roomId: document.getElementById('roomId'),
             localVid: document.getElementById('localVideo'),
             remoteVid: document.getElementById('remoteVideo'),
-            status: document.getElementById('status')
+            status: document.getElementById('status'),
+            chatBox: document.getElementById('chatBox'),
+            msgInput: document.getElementById('msgInput'),
+            sendBtn: document.getElementById('sendBtn')
         };
 
-        // Démarrage
+        // --- Démarrage ---
         UI.joinBtn.onclick = async () => {
             roomId = UI.roomId.value.trim();
-            if (!roomId) return alert("Nom de salon requis");
+            if (!roomId) return alert("Nom requis");
 
-            // UI Switch
             UI.login.classList.add('hidden');
-            UI.video.classList.remove('hidden');
-            UI.video.classList.add('flex');
+            UI.app.classList.remove('hidden');
+            UI.app.classList.add('flex');
 
-            // Caméra
             localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
             UI.localVid.srcObject = localStream;
-            
-            // Ajout des pistes
             localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
 
-            // Réception flux distant
-            pc.ontrack = event => {
-                UI.remoteVid.srcObject = event.streams[0];
-                UI.status.innerText = "✅ Connecté !";
-                UI.status.classList.replace('text-yellow-400', 'text-green-400');
+            pc.ontrack = e => {
+                UI.remoteVid.srcObject = e.streams[0];
+                UI.status.innerText = "✅ Vidéo Connectée";
+                UI.status.className = "text-green-400 font-bold";
+            };
+
+            // Si je suis l'appelé, j'écoute l'arrivée du DataChannel
+            pc.ondatachannel = (event) => {
+                setupDataChannel(event.channel);
             };
 
             joinRoom();
         };
 
-        // Logique Signalisation (Qui est qui ?)
+        // --- Logique Signalisation ---
         async function joinRoom() {
             const roomRef = ref(db, 'rooms/' + roomId);
             const snapshot = await get(roomRef);
 
             if (snapshot.exists() && snapshot.val().offer) {
-                // --- RÔLE : APPELÉ (Répondant) ---
-                UI.status.innerText = "Appel entrant... Connexion...";
-                handleIceCandidates(false); // false = je suis callee
-
+                // APPELÉ
+                handleIceCandidates(false);
                 const offer = snapshot.val().offer;
                 await pc.setRemoteDescription(new RTCSessionDescription(offer));
-                
                 const answer = await pc.createAnswer();
                 await pc.setLocalDescription(answer);
-
-                // Sauvegarde réponse
                 await update(roomRef, { answer: { type: answer.type, sdp: answer.sdp } });
-
             } else {
-                // --- RÔLE : APPELANT (Initiateur) ---
-                UI.status.innerText = "Création du salon... Attente...";
-                
-                // Nettoyage préventif si le salon existait
+                // APPELANT
                 await set(roomRef, {}); 
+                handleIceCandidates(true);
                 
-                handleIceCandidates(true); // true = je suis caller
+                // L'appelant CRÉE le canal de données AVANT l'offre
+                dataChannel = pc.createDataChannel("chat");
+                setupDataChannel(dataChannel);
 
                 const offer = await pc.createOffer();
                 await pc.setLocalDescription(offer);
-
-                // Sauvegarde offre
                 await set(roomRef, { offer: { type: offer.type, sdp: offer.sdp } });
 
-                // Écoute de la réponse
-                const answerRef = child(roomRef, 'answer');
-                onValue(answerRef, (snap) => {
-                    const data = snap.val();
-                    if (!pc.currentRemoteDescription && data) {
-                        const answer = new RTCSessionDescription(data);
-                        pc.setRemoteDescription(answer);
+                onValue(child(roomRef, 'answer'), (snap) => {
+                    if (!pc.currentRemoteDescription && snap.val()) {
+                        pc.setRemoteDescription(new RTCSessionDescription(snap.val()));
                     }
                 });
             }
         }
 
-        // Gestion des Candidats ICE (Réseau)
-        function handleIceCandidates(isCaller) {
-            const myIceRef = ref(db, `rooms/${roomId}/${isCaller ? 'callerIce' : 'calleeIce'}`);
-            const remoteIceRef = ref(db, `rooms/${roomId}/${isCaller ? 'calleeIce' : 'callerIce'}`);
-
-            // 1. J'envoie mes candidats
-            pc.onicecandidate = event => {
-                if (event.candidate) {
-                    push(myIceRef, event.candidate.toJSON());
-                }
+        // --- Gestion du Tchat (DataChannel) ---
+        function setupDataChannel(channel) {
+            dataChannel = channel;
+            dataChannel.onopen = () => {
+                UI.msgInput.disabled = false;
+                UI.sendBtn.disabled = false;
+                UI.chatBox.innerHTML = '<div class="text-center text-green-400 text-xs my-2">-- Tchat connecté --</div>';
             };
+            dataChannel.onmessage = (event) => addMessage(event.data, 'received');
+        }
 
-            // 2. J'écoute les candidats distants
-            onValue(remoteIceRef, (snapshot) => {
-                snapshot.forEach((childSnapshot) => {
-                    const candidate = new RTCIceCandidate(childSnapshot.val());
-                    pc.addIceCandidate(candidate).catch(e => console.log("Erreur ICE", e));
-                });
-            });
+        function sendMessage() {
+            const text = UI.msgInput.value.trim();
+            if (text && dataChannel && dataChannel.readyState === 'open') {
+                dataChannel.send(text);
+                addMessage(text, 'sent');
+                UI.msgInput.value = '';
+            }
+        }
+
+        function addMessage(text, type) {
+            const div = document.createElement('div');
+            const isMe = type === 'sent';
+            div.className = `max-w-[85%] p-2 rounded-lg text-sm ${isMe ? 'bg-teal-600 self-end ml-auto' : 'bg-gray-700 self-start'}`;
+            div.textContent = text;
+            UI.chatBox.appendChild(div);
+            UI.chatBox.scrollTop = UI.chatBox.scrollHeight;
+        }
+
+        // Listeners Tchat
+        UI.sendBtn.onclick = sendMessage;
+        UI.msgInput.onkeypress = (e) => e.key === 'Enter' && sendMessage();
+
+        // --- ICE Candidates ---
+        function handleIceCandidates(isCaller) {
+            const myIce = ref(db, `rooms/${roomId}/${isCaller ? 'callerIce' : 'calleeIce'}`);
+            const remoteIce = ref(db, `rooms/${roomId}/${isCaller ? 'calleeIce' : 'callerIce'}`);
+            pc.onicecandidate = e => e.candidate && push(myIce, e.candidate.toJSON());
+            onValue(remoteIce, s => s.forEach(c => pc.addIceCandidate(new RTCIceCandidate(c.val())).catch(console.error)));
         }
     </script>
 </body>
 </html>
 
+
+    
