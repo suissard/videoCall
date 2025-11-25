@@ -3,203 +3,442 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Visio & Tchat P2P</title>
+    <title>Team Room Pro 🚀</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         .hidden { display: none; }
-        video { transform: scaleX(-1); } /* Miroir */
-        /* Scrollbar fine pour le tchat */
-        ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-thumb { background: #4B5563; border-radius: 3px; }
+        video { transform: scaleX(-1); object-fit: cover; }
+        .video-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1rem; }
+        /* Barres réseau */
+        .signal-bars { display: flex; align-items: flex-end; gap: 2px; height: 16px; }
+        .bar { width: 4px; background: #4b5563; border-radius: 1px; }
+        .bar:nth-child(1) { height: 25%; } .bar:nth-child(2) { height: 50%; }
+        .bar:nth-child(3) { height: 75%; } .bar:nth-child(4) { height: 100%; }
+        .signal-good .bar { background: #22c55e; }
+        .signal-med .bar:not(:nth-child(4)) { background: #f59e0b; }
+        .signal-bad .bar:nth-child(1), .signal-bad .bar:nth-child(2) { background: #ef4444; }
+        dialog::backdrop { background: rgba(0, 0, 0, 0.7); backdrop-filter: blur(3px); }
     </style>
 </head>
-<body class="bg-gray-900 text-white flex flex-col items-center justify-center min-h-screen p-4 font-sans">
+<body class="bg-gray-900 text-white min-h-screen flex flex-col font-sans">
 
     <!-- LOGIN -->
-    <div id="login" class="w-full max-w-md bg-gray-800 p-6 rounded-xl shadow-xl text-center">
-        <h1 class="text-2xl font-bold mb-4 text-teal-400">Visio & Tchat 💬</h1>
-        <input id="roomId" type="text" placeholder="Nom du salon (ex: apéro)" 
-               class="w-full p-3 mb-4 bg-gray-700 rounded outline-none focus:ring-2 focus:ring-teal-500 text-white">
-        <button id="joinBtn" class="w-full bg-teal-600 hover:bg-teal-700 py-3 rounded font-bold transition">
-            Rejoindre
-        </button>
+    <div id="login" class="max-w-md mx-auto mt-20 bg-gray-800 p-8 rounded-xl text-center shadow-2xl border border-gray-700">
+        <h1 class="text-3xl font-bold mb-6 text-indigo-400">Team Room <i class="fas fa-video"></i></h1>
+        
+        <div class="relative mb-4">
+            <input id="roomId" type="text" placeholder="Nom du salon..." class="w-full p-3 bg-gray-700 rounded text-white outline-none focus:ring-2 focus:ring-indigo-500">
+            <button id="copyLinkBtn" class="absolute right-2 top-2 text-gray-400 hover:text-white p-1" title="Copier le lien du salon"><i class="fas fa-link"></i></button>
+        </div>
+        
+        <input id="usernameInput" type="text" placeholder="Votre Pseudo..." class="w-full p-3 mb-4 bg-gray-700 rounded text-white outline-none focus:ring-2 focus:ring-indigo-500">
+        <button id="joinBtn" class="w-full bg-indigo-600 hover:bg-indigo-700 py-3 rounded font-bold transition shadow-lg">Rejoindre</button>
     </div>
 
-    <!-- APP INTERFACE -->
-    <div id="appInterface" class="hidden w-full max-w-5xl flex-col md:flex-row gap-4 h-[85vh]">
-        
-        <!-- COLONNE GAUCHE : VIDÉOS -->
-        <div class="flex-1 flex flex-col gap-4">
-            <div class="flex justify-between items-center bg-gray-800 p-3 rounded-lg">
-                <span id="status" class="text-yellow-400 font-mono text-sm">En attente...</span>
-                <button onclick="location.reload()" class="bg-red-600 hover:bg-red-700 px-3 py-1 rounded text-sm transition">Quitter</button>
+    <!-- ROOM -->
+    <div id="room" class="hidden flex-1 flex-col p-4 gap-4 h-screen">
+        <!-- Header -->
+        <div class="flex justify-between items-center bg-gray-800 p-4 rounded-xl shadow border border-gray-700">
+            <div class="font-bold text-lg flex items-center gap-2">
+                <span class="text-gray-400"><i class="fas fa-hashtag"></i></span>
+                <span id="roomNameDisplay" class="text-white"></span>
             </div>
-            
-            <div class="relative flex-1 bg-black rounded-xl overflow-hidden shadow-lg">
-                <video id="remoteVideo" autoplay playsinline class="w-full h-full object-cover"></video>
-                <div class="absolute bottom-4 right-4 w-32 h-24 bg-gray-800 rounded-lg border-2 border-gray-600 overflow-hidden">
-                    <video id="localVideo" autoplay muted playsinline class="w-full h-full object-cover"></video>
+            <div class="flex gap-2">
+                <button id="settingsBtn" class="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg transition"><i class="fas fa-cog"></i></button>
+                <button onclick="location.href=location.pathname" class="bg-red-600 hover:bg-red-700 px-4 py-2 rounded-lg text-sm font-bold transition"><i class="fas fa-sign-out-alt"></i></button>
+            </div>
+        </div>
+
+        <div class="flex flex-1 gap-4 overflow-hidden flex-col md:flex-row">
+            <!-- Vidéos -->
+            <div id="videoContainer" class="flex-1 video-grid overflow-y-auto p-4 bg-black/20 rounded-xl border border-gray-800">
+                <!-- Ma vidéo locale -->
+                <div class="relative bg-black rounded-xl overflow-hidden aspect-video shadow-lg border-2 border-indigo-500 group">
+                    <video id="localVideo" autoplay muted playsinline class="w-full h-full"></video>
+                    <span class="absolute bottom-2 left-2 bg-black/60 px-2 py-1 text-xs rounded font-bold backdrop-blur-sm">Moi</span>
+                    <div class="absolute top-2 left-2 flex gap-1">
+                        <span id="muteIcon" class="hidden bg-red-600/80 px-2 py-1 rounded text-xs"><i class="fas fa-microphone-slash"></i></span>
+                        <span id="camIcon" class="hidden bg-red-600/80 px-2 py-1 rounded text-xs"><i class="fas fa-video-slash"></i></span>
+                    </div>
+                    <!-- Stats Overlay -->
+                    <div class="absolute top-2 right-2 bg-black/70 px-2 py-1 rounded flex items-center gap-2 backdrop-blur-sm">
+                        <div id="localSignal" class="signal-bars"><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div></div>
+                        <span id="uploadRate" class="text-xs font-mono text-gray-300">0 KB/s</span>
+                        <i class="fas fa-arrow-up text-xs text-green-400"></i>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tchat -->
+            <div class="w-full md:w-80 bg-gray-800 rounded-xl flex flex-col shadow-xl border border-gray-700 h-64 md:h-auto">
+                <div class="p-4 border-b border-gray-700 font-bold text-gray-300 flex justify-between items-center">
+                    <span>Chat</span> <span class="text-xs bg-gray-700 px-2 py-1 rounded-full" id="userCount">1 en ligne</span>
+                </div>
+                <div id="chatBox" class="flex-1 p-4 overflow-y-auto space-y-3 flex flex-col text-sm bg-gray-900/50"></div>
+                <div class="p-3 border-t border-gray-700 flex gap-2 bg-gray-800 rounded-b-xl">
+                    <input id="msgInput" type="text" placeholder="Écrire..." class="flex-1 bg-gray-700 rounded-lg px-3 py-2 outline-none focus:ring-1 focus:ring-indigo-500 text-white">
+                    <button id="sendBtn" class="bg-indigo-600 hover:bg-indigo-700 w-10 h-10 rounded-lg flex items-center justify-center transition"><i class="fas fa-paper-plane"></i></button>
                 </div>
             </div>
         </div>
+    </div>
 
-        <!-- COLONNE DROITE : TCHAT -->
-        <div class="w-full md:w-80 bg-gray-800 rounded-xl flex flex-col shadow-lg">
-            <div class="p-3 border-b border-gray-700 font-bold text-gray-300">Tchat Direct 🔒</div>
-            
-            <div id="chatBox" class="flex-1 p-3 overflow-y-auto space-y-2 flex flex-col">
-                <div class="text-center text-xs text-gray-500 mt-auto">En attente de connexion...</div>
+    <!-- MODAL PARAMÈTRES -->
+    <dialog id="settingsModal" class="bg-gray-800 text-white rounded-xl shadow-2xl p-6 w-full max-w-sm backdrop:bg-black/80">
+        <div class="flex justify-between items-center border-b border-gray-700 pb-4 mb-4">
+            <h2 class="text-xl font-bold">Paramètres</h2>
+            <button id="closeSettings" class="text-gray-400 hover:text-white"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="space-y-4">
+            <div>
+                <label class="text-xs text-gray-400 uppercase font-bold">Pseudo</label>
+                <div class="flex gap-2 mt-1">
+                    <input id="settingName" type="text" class="w-full bg-gray-700 rounded p-2 outline-none border border-gray-600">
+                    <button id="saveNameBtn" class="bg-indigo-600 px-3 rounded"><i class="fas fa-check"></i></button>
+                </div>
             </div>
-
-            <div class="p-3 border-t border-gray-700 flex gap-2">
-                <input id="msgInput" type="text" placeholder="Message..." disabled
-                       class="flex-1 bg-gray-700 rounded px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-teal-500 disabled:opacity-50">
-                <button id="sendBtn" disabled class="bg-teal-600 hover:bg-teal-700 px-3 py-2 rounded text-sm disabled:opacity-50 transition">➤</button>
+            <div>
+                <label class="text-xs text-gray-400 uppercase font-bold">Périphériques</label>
+                <div class="flex gap-2 mt-1">
+                    <button id="toggleMicBtn" class="flex-1 bg-gray-700 p-2 rounded hover:bg-gray-600"><i class="fas fa-microphone"></i> On</button>
+                    <button id="toggleCamBtn" class="flex-1 bg-gray-700 p-2 rounded hover:bg-gray-600"><i class="fas fa-video"></i> On</button>
+                </div>
+            </div>
+            <div>
+                <label class="text-xs text-gray-400 uppercase font-bold">Qualité Caméra</label>
+                <select id="qualitySelect" class="w-full bg-gray-700 p-2 rounded mt-1 border border-gray-600">
+                    <option value="low">Éco (Low)</option>
+                    <option value="med" selected>Standard (VGA)</option>
+                    <option value="high">HD (720p)</option>
+                </select>
             </div>
         </div>
-    </div>
+    </dialog>
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getDatabase, ref, set, onValue, push, update, get, child } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+        import { getDatabase, ref, set, push, remove, onChildAdded, onChildRemoved, onDisconnect, update } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyBMuMzxCWG98FJG76wUAbJNUXimc4RKn0E",
             authDomain: "privatevideocall.firebaseapp.com",
             databaseURL: "https://privatevideocall-default-rtdb.europe-west1.firebasedatabase.app",
             projectId: "privatevideocall",
-            storageBucket: "privatevideocall.firebasestorage.app",
-            messagingSenderId: "802974624484",
-            appId: "1:802974624484:web:4fd31c99f533c90bc55af1",
-            measurementId: "G-WGW832F810"
+            appId: "1:802974624484:web:4fd31c99f533c90bc55af1"
         };
 
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
 
-        const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
-        let localStream = null;
-        let dataChannel = null;
-        let roomId = null;
+        // GLOBALS
+        const myId = push(ref(db, 'dummy')).key;
+        const peers = {}; 
+        let localStream, roomId, myName;
+        let isMuted = false, isCamOff = false, initialLoadDone = false;
 
-        // UI Refs
         const UI = {
             login: document.getElementById('login'),
-            app: document.getElementById('appInterface'),
+            room: document.getElementById('room'),
             joinBtn: document.getElementById('joinBtn'),
             roomId: document.getElementById('roomId'),
-            localVid: document.getElementById('localVideo'),
-            remoteVid: document.getElementById('remoteVideo'),
-            status: document.getElementById('status'),
+            usernameInput: document.getElementById('usernameInput'),
+            copyLinkBtn: document.getElementById('copyLinkBtn'),
+            videoGrid: document.getElementById('videoContainer'),
+            localVideo: document.getElementById('localVideo'),
             chatBox: document.getElementById('chatBox'),
             msgInput: document.getElementById('msgInput'),
-            sendBtn: document.getElementById('sendBtn')
+            sendBtn: document.getElementById('sendBtn'),
+            uploadRate: document.getElementById('uploadRate'),
+            localSignal: document.getElementById('localSignal'),
+            settingsDialog: document.getElementById('settingsModal'),
+            settingsBtn: document.getElementById('settingsBtn'),
+            closeSettings: document.getElementById('closeSettings'),
+            settingName: document.getElementById('settingName'),
+            saveNameBtn: document.getElementById('saveNameBtn'),
+            toggleMic: document.getElementById('toggleMicBtn'),
+            toggleCam: document.getElementById('toggleCamBtn'),
+            qualitySelect: document.getElementById('qualitySelect'),
+            muteIcon: document.getElementById('muteIcon'),
+            camIcon: document.getElementById('camIcon'),
+            userCount: document.getElementById('userCount')
         };
 
-        // --- Démarrage ---
+        // --- INIT AU CHARGEMENT ---
+        window.addEventListener('load', () => {
+            // 1. Récupérer le pseudo sauvegardé
+            const savedName = localStorage.getItem('chat_username');
+            if (savedName) UI.usernameInput.value = savedName;
+
+            // 2. Vérifier l'URL pour le salon
+            const params = new URLSearchParams(window.location.search);
+            const urlRoom = params.get('room');
+            if (urlRoom) UI.roomId.value = urlRoom;
+        });
+
+        // --- LOGIQUE DE CONNEXION ---
         UI.joinBtn.onclick = async () => {
-            roomId = UI.roomId.value.trim();
-            if (!roomId) return alert("Nom requis");
+            roomId = UI.roomId.value.trim().replace(/\s/g, ''); // Pas d'espaces dans l'ID
+            myName = UI.usernameInput.value.trim() || 'Anonyme';
+            
+            if(!roomId) return alert("Nom de salon requis");
+
+            // Sauvegarde pseudo
+            localStorage.setItem('chat_username', myName);
+            
+            // Mise à jour URL sans recharger
+            const newUrl = `${window.location.pathname}?room=${roomId}`;
+            window.history.pushState({path: newUrl}, '', newUrl);
+
+            if (Notification.permission !== "granted") await Notification.requestPermission();
 
             UI.login.classList.add('hidden');
-            UI.app.classList.remove('hidden');
-            UI.app.classList.add('flex');
+            UI.room.classList.remove('hidden');
+            UI.room.classList.add('flex');
+            document.getElementById('roomNameDisplay').textContent = roomId;
+            UI.settingName.value = myName;
 
-            localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-            UI.localVid.srcObject = localStream;
-            localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+            try {
+                localStream = await navigator.mediaDevices.getUserMedia({ video: { width: 640 }, audio: true });
+                UI.localVideo.srcObject = localStream;
+            } catch(e) {
+                alert("Erreur Caméra: " + e.message);
+                return;
+            }
 
-            pc.ontrack = e => {
-                UI.remoteVid.srcObject = e.streams[0];
-                UI.status.innerText = "✅ Vidéo Connectée";
-                UI.status.className = "text-green-400 font-bold";
-            };
+            const userRef = ref(db, `rooms/${roomId}/users/${myId}`);
+            await set(userRef, { name: myName });
+            onDisconnect(userRef).remove();
 
-            // Si je suis l'appelé, j'écoute l'arrivée du DataChannel
-            pc.ondatachannel = (event) => {
-                setupDataChannel(event.channel);
-            };
-
-            joinRoom();
+            setupRoomListeners();
+            startStatsLoop();
+            setTimeout(() => { initialLoadDone = true; }, 2000);
         };
 
-        // --- Logique Signalisation ---
-        async function joinRoom() {
-            const roomRef = ref(db, 'rooms/' + roomId);
-            const snapshot = await get(roomRef);
+        // Bouton copie lien
+        UI.copyLinkBtn.onclick = () => {
+            const r = UI.roomId.value.trim();
+            if(!r) return;
+            const link = `${window.location.origin}${window.location.pathname}?room=${r}`;
+            navigator.clipboard.writeText(link);
+            UI.copyLinkBtn.innerHTML = '<i class="fas fa-check text-green-400"></i>';
+            setTimeout(() => UI.copyLinkBtn.innerHTML = '<i class="fas fa-link"></i>', 2000);
+        };
 
-            if (snapshot.exists() && snapshot.val().offer) {
-                // APPELÉ
-                handleIceCandidates(false);
-                const offer = snapshot.val().offer;
-                await pc.setRemoteDescription(new RTCSessionDescription(offer));
-                const answer = await pc.createAnswer();
-                await pc.setLocalDescription(answer);
-                await update(roomRef, { answer: { type: answer.type, sdp: answer.sdp } });
-            } else {
-                // APPELANT
-                await set(roomRef, {}); 
-                handleIceCandidates(true);
-                
-                // L'appelant CRÉE le canal de données AVANT l'offre
+        // --- FIREBASE LISTENERS ---
+        function setupRoomListeners() {
+            const usersRef = ref(db, `rooms/${roomId}/users`);
+            
+            onChildAdded(usersRef, async (s) => {
+                updateUserCount();
+                if (s.key !== myId) {
+                    await createPeerConnection(s.key, s.val().name, true);
+                    if(initialLoadDone) sendNotification("Nouvelle connexion", `${s.val().name} est là.`);
+                }
+            });
+            
+            onChildRemoved(usersRef, (s) => {
+                removePeer(s.key);
+                updateUserCount();
+                sendNotification("Déconnexion", `${s.val().name} est parti.`);
+            });
+            
+            onChildAdded(ref(db, `rooms/${roomId}/signals/${myId}`), async (s) => {
+                const data = s.val();
+                if (!peers[data.sender]) await createPeerConnection(data.sender, "User", false);
+                const pc = peers[data.sender].pc;
+
+                try {
+                    if (data.type === 'offer') {
+                        await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+                        const answer = await pc.createAnswer();
+                        await pc.setLocalDescription(answer);
+                        sendSignal(data.sender, { type: 'answer', sdp: answer, sender: myId });
+                    } else if (data.type === 'answer') {
+                        await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+                    } else if (data.type === 'candidate') {
+                        await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+                    }
+                } catch(e) {}
+                remove(s.ref);
+            });
+        }
+
+        function updateUserCount() {
+            const count = Object.keys(peers).length + 1;
+            UI.userCount.textContent = `${count} en ligne`;
+        }
+
+        // --- WEBRTC ---
+        async function createPeerConnection(targetId, targetName, isInitiator) {
+            const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+            let dataChannel;
+
+            peers[targetId] = { pc, name: targetName, lastBytesRx: 0, lastBytesTx: 0 };
+            localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+
+            // UI Video
+            const vidWrapper = document.createElement('div');
+            vidWrapper.id = `wrap-${targetId}`;
+            vidWrapper.className = "relative bg-black rounded-xl overflow-hidden aspect-video shadow border border-gray-700";
+            vidWrapper.innerHTML = `
+                <video id="vid-${targetId}" autoplay playsinline class="w-full h-full"></video>
+                <span class="absolute bottom-2 left-2 bg-black/60 px-2 py-1 text-xs rounded">${targetName}</span>
+                <div class="absolute top-2 right-2 bg-black/70 px-2 py-1 rounded flex items-center gap-2">
+                    <span id="rate-${targetId}" class="text-xs font-mono">0 KB/s</span>
+                    <div id="sig-${targetId}" class="signal-bars"><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div></div>
+                </div>
+            `;
+            UI.videoGrid.appendChild(vidWrapper);
+
+            pc.ontrack = (e) => document.getElementById(`vid-${targetId}`).srcObject = e.streams[0];
+            pc.onicecandidate = (e) => e.candidate && sendSignal(targetId, { type: 'candidate', candidate: e.candidate.toJSON(), sender: myId });
+
+            if (isInitiator) {
+                // Initiator crée le channel
                 dataChannel = pc.createDataChannel("chat");
-                setupDataChannel(dataChannel);
-
+                setupDataChannel(dataChannel, targetId);
                 const offer = await pc.createOffer();
                 await pc.setLocalDescription(offer);
-                await set(roomRef, { offer: { type: offer.type, sdp: offer.sdp } });
-
-                onValue(child(roomRef, 'answer'), (snap) => {
-                    if (!pc.currentRemoteDescription && snap.val()) {
-                        pc.setRemoteDescription(new RTCSessionDescription(snap.val()));
-                    }
-                });
+                sendSignal(targetId, { type: 'offer', sdp: offer, sender: myId });
+            } else {
+                // Receiver attend le channel
+                pc.ondatachannel = (e) => setupDataChannel(e.channel, targetId);
             }
         }
 
-        // --- Gestion du Tchat (DataChannel) ---
-        function setupDataChannel(channel) {
-            dataChannel = channel;
-            dataChannel.onopen = () => {
-                UI.msgInput.disabled = false;
-                UI.sendBtn.disabled = false;
-                UI.chatBox.innerHTML = '<div class="text-center text-green-400 text-xs my-2">-- Tchat connecté --</div>';
-            };
-            dataChannel.onmessage = (event) => addMessage(event.data, 'received');
+        function removePeer(userId) {
+            if (peers[userId]) { peers[userId].pc.close(); delete peers[userId]; }
+            const el = document.getElementById(`wrap-${userId}`);
+            if (el) el.remove();
         }
 
-        function sendMessage() {
-            const text = UI.msgInput.value.trim();
-            if (text && dataChannel && dataChannel.readyState === 'open') {
-                dataChannel.send(text);
-                addMessage(text, 'sent');
+        function sendSignal(targetId, data) { push(ref(db, `rooms/${roomId}/signals/${targetId}`), data); }
+
+        // --- TCHAT (CORRECTIF) ---
+        function setupDataChannel(dc, userId) {
+            peers[userId].dc = dc;
+            dc.onopen = () => console.log("Chat open with", userId);
+            dc.onmessage = (e) => { 
+                try {
+                    const d = JSON.parse(e.data);
+                    if(!d.system) {
+                        addMessage(d.msg, 'remote', d.name);
+                        sendNotification("Message", `${d.name}: ${d.msg}`);
+                    }
+                } catch(e) {}
+            };
+        }
+
+        function sendMessage(text, isSystem = false) {
+            const txt = text || UI.msgInput.value.trim();
+            if(!txt) return;
+            
+            const pl = JSON.stringify({ name: myName, msg: txt, system: isSystem });
+            
+            // Envoyer à tous les peers connectés
+            Object.values(peers).forEach(p => { 
+                if(p.dc && p.dc.readyState === 'open') {
+                    p.dc.send(pl); 
+                }
+            });
+            
+            if(!isSystem) {
+                addMessage(txt, 'me', 'Moi');
                 UI.msgInput.value = '';
             }
         }
 
-        function addMessage(text, type) {
+        function addMessage(txt, type, name = '') {
             const div = document.createElement('div');
-            const isMe = type === 'sent';
-            div.className = `max-w-[85%] p-2 rounded-lg text-sm ${isMe ? 'bg-teal-600 self-end ml-auto' : 'bg-gray-700 self-start'}`;
-            div.textContent = text;
+            if (type === 'sys') { 
+                div.className = "text-center text-xs text-gray-400 italic my-1"; 
+                div.textContent = txt; 
+            } else { 
+                const isMe = type === 'me';
+                div.className = `max-w-[85%] p-2 rounded-lg text-sm break-words ${isMe ? 'bg-indigo-600 self-end' : 'bg-gray-700 self-start'}`; 
+                div.innerHTML = `<span class="block text-[10px] opacity-75 font-bold mb-1">${name}</span>${txt}`; 
+            }
             UI.chatBox.appendChild(div);
             UI.chatBox.scrollTop = UI.chatBox.scrollHeight;
         }
 
-        // Listeners Tchat
-        UI.sendBtn.onclick = sendMessage;
+        // Listeners Chat
+        UI.sendBtn.onclick = () => sendMessage();
         UI.msgInput.onkeypress = (e) => e.key === 'Enter' && sendMessage();
 
-        // --- ICE Candidates ---
-        function handleIceCandidates(isCaller) {
-            const myIce = ref(db, `rooms/${roomId}/${isCaller ? 'callerIce' : 'calleeIce'}`);
-            const remoteIce = ref(db, `rooms/${roomId}/${isCaller ? 'calleeIce' : 'callerIce'}`);
-            pc.onicecandidate = e => e.candidate && push(myIce, e.candidate.toJSON());
-            onValue(remoteIce, s => s.forEach(c => pc.addIceCandidate(new RTCIceCandidate(c.val())).catch(console.error)));
+        // --- RESTE (Settings, Stats...) ---
+        function sendNotification(title, body) {
+            if (document.hidden && Notification.permission === "granted" && initialLoadDone) {
+                new Notification(title, { body: body });
+            }
+        }
+
+        UI.settingsBtn.onclick = () => UI.settingsDialog.showModal();
+        UI.closeSettings.onclick = () => UI.settingsDialog.close();
+
+        UI.saveNameBtn.onclick = () => {
+            const n = UI.settingName.value.trim();
+            if(n) { myName = n; localStorage.setItem('chat_username', n); UI.settingsDialog.close(); }
+        };
+
+        UI.toggleMic.onclick = () => {
+            isMuted = !isMuted;
+            localStream.getAudioTracks()[0].enabled = !isMuted;
+            UI.toggleMic.innerHTML = isMuted ? '<i class="fas fa-microphone-slash text-red-400"></i> Off' : '<i class="fas fa-microphone"></i> On';
+            UI.muteIcon.classList.toggle('hidden', !isMuted);
+        };
+
+        UI.toggleCam.onclick = () => {
+            isCamOff = !isCamOff;
+            localStream.getVideoTracks()[0].enabled = !isCamOff;
+            UI.toggleCam.innerHTML = isCamOff ? '<i class="fas fa-video-slash text-red-400"></i> Off' : '<i class="fas fa-video"></i> On';
+            UI.camIcon.classList.toggle('hidden', !isCamOff);
+        };
+
+        UI.qualitySelect.onchange = async () => {
+             const c = { low: {width:320}, med: {width:640}, high: {width:1280} };
+             try { await localStream.getVideoTracks()[0].applyConstraints(c[UI.qualitySelect.value]); } catch(e){}
+        };
+
+        function startStatsLoop() {
+            setInterval(async () => {
+                let totalUpload = 0;
+                for (const [id, peer] of Object.entries(peers)) {
+                    if (peer.pc.connectionState !== 'connected') continue;
+                    try {
+                        const stats = await peer.pc.getStats();
+                        let dl = 0, ul = 0;
+                        stats.forEach(r => {
+                            if (r.type.includes('inbound') && r.kind === 'video') {
+                                if (peer.lastBytesRx) dl = Math.round((r.bytesReceived - peer.lastBytesRx) / 1024);
+                                peer.lastBytesRx = r.bytesReceived;
+                            }
+                            if (r.type.includes('outbound') && r.kind === 'video') {
+                                if (peer.lastBytesTx) ul = Math.round((r.bytesSent - peer.lastBytesTx) / 1024);
+                                peer.lastBytesTx = r.bytesSent;
+                            }
+                        });
+                        totalUpload += ul;
+                        updateSignalUI(id, dl);
+                    } catch(e) {}
+                }
+                UI.uploadRate.textContent = `${totalUpload} KB/s`;
+                updateSignalColors(UI.localSignal, totalUpload);
+            }, 1000);
+        }
+
+        function updateSignalUI(uid, val) {
+            const t = document.getElementById(`rate-${uid}`), b = document.getElementById(`sig-${uid}`);
+            if(t) t.textContent = `${val} KB/s`;
+            if(b) updateSignalColors(b, val);
+        }
+        function updateSignalColors(el, v) {
+            el.className = 'signal-bars';
+            if(v > 300) el.classList.add('signal-good');
+            else if(v > 50) el.classList.add('signal-med');
+            else el.classList.add('signal-bad');
         }
     </script>
 </body>
 </html>
-
-
-    
