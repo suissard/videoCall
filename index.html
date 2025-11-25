@@ -246,7 +246,8 @@
             onChildAdded(ref(db, `rooms/${roomId}/signals/${myId}`), async (s) => {
                 const data = s.val();
                 if (!peers[data.sender]) await createPeerConnection(data.sender, "User", false);
-                const pc = peers[data.sender].pc;
+                const peer = peers[data.sender];
+                const pc = peer.pc;
 
                 try {
                     if (data.type === 'offer') {
@@ -254,12 +255,25 @@
                         const answer = await pc.createAnswer();
                         await pc.setLocalDescription(answer);
                         sendSignal(data.sender, { type: 'answer', sdp: answer, sender: myId });
+                        // Traiter les candidats en attente
+                        peer.candidateQueue.forEach(c => pc.addIceCandidate(new RTCIceCandidate(c)).catch(console.error));
+                        peer.candidateQueue = [];
+
                     } else if (data.type === 'answer') {
                         await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+                        // Traiter les candidats en attente
+                        peer.candidateQueue.forEach(c => pc.addIceCandidate(new RTCIceCandidate(c)).catch(console.error));
+                        peer.candidateQueue = [];
+
                     } else if (data.type === 'candidate') {
-                        await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+                        if (pc.remoteDescription && pc.remoteDescription.type) {
+                            await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+                        } else {
+                            // Mettre en file d'attente si la description n'est pas encore là
+                            peer.candidateQueue.push(data.candidate);
+                        }
                     }
-                } catch(e) {}
+                } catch(e) { console.warn("Signal error", e); }
                 remove(s.ref);
             });
         }
@@ -274,7 +288,15 @@
             const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
             let dataChannel;
 
-            peers[targetId] = { pc, name: targetName, lastBytesRx: 0, lastBytesTx: 0 };
+            // Ajout de candidateQueue pour éviter le bug des vidéos noires
+            peers[targetId] = { 
+                pc, 
+                name: targetName, 
+                lastBytesRx: 0, 
+                lastBytesTx: 0,
+                candidateQueue: [] 
+            };
+            
             localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
 
             // UI Video
