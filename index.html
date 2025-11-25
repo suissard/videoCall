@@ -247,11 +247,21 @@
             const usersRef = ref(db, `rooms/${roomId}/users`);
             
             onChildAdded(usersRef, async (s) => {
+                if (s.key === myId) return; // Skip myself
+
                 updateUserCount();
-                if (s.key !== myId) {
-                    await createPeerConnection(s.key, s.val().name, true);
-                    if(initialLoadDone) sendNotification("Nouvelle connexion", `${s.val().name} est là.`);
+                
+                // --- FIX CRITIQUE : Éviter la double initiation (Glare) ---
+                // Seul l'utilisateur le plus RÉCENT (plus grand ID) lance l'appel.
+                // L'utilisateur DÉJÀ PRÉSENT attend l'offre.
+                if (myId < s.key) {
+                    console.log("Je suis l'ancien, j'attends l'offre de", s.key);
+                    return; 
                 }
+
+                console.log("Je suis le nouveau, je lance l'appel vers", s.key);
+                await createPeerConnection(s.key, s.val().name, true);
+                if(initialLoadDone) sendNotification("Nouvelle connexion", `${s.val().name} est là.`);
             });
             
             onChildRemoved(usersRef, (s) => {
@@ -262,7 +272,10 @@
             
             onChildAdded(ref(db, `rooms/${roomId}/signals/${myId}`), async (s) => {
                 const data = s.val();
+                
+                // Si je n'ai pas initié l'appel (car je suis l'ancien), je crée la connexion maintenant en mode "Receiver"
                 if (!peers[data.sender]) await createPeerConnection(data.sender, "User", false);
+                
                 const peer = peers[data.sender];
                 const pc = peer.pc;
 
@@ -272,6 +285,7 @@
                         const answer = await pc.createAnswer();
                         await pc.setLocalDescription(answer);
                         sendSignal(data.sender, { type: 'answer', sdp: answer, sender: myId });
+                        // Traitement de la file d'attente des candidats ICE
                         peer.candidateQueue.forEach(c => pc.addIceCandidate(new RTCIceCandidate(c)).catch(console.error));
                         peer.candidateQueue = [];
 
@@ -281,9 +295,11 @@
                         peer.candidateQueue = [];
 
                     } else if (data.type === 'candidate') {
+                        // Si la description distante est prête, on ajoute le candidat
                         if (pc.remoteDescription && pc.remoteDescription.type) {
                             await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
                         } else {
+                            // Sinon on le met en attente
                             peer.candidateQueue.push(data.candidate);
                         }
                     }
@@ -330,12 +346,15 @@
             pc.onicecandidate = (e) => e.candidate && sendSignal(targetId, { type: 'candidate', candidate: e.candidate.toJSON(), sender: myId });
 
             if (isInitiator) {
+                // Initiator crée le channel et l'offre
                 dataChannel = pc.createDataChannel("chat");
                 setupDataChannel(dataChannel, targetId);
+                
                 const offer = await pc.createOffer();
                 await pc.setLocalDescription(offer);
                 sendSignal(targetId, { type: 'offer', sdp: offer, sender: myId });
             } else {
+                // Receiver attend le channel (pas de création manuelle ici)
                 pc.ondatachannel = (e) => setupDataChannel(e.channel, targetId);
             }
         }
@@ -370,8 +389,11 @@
             const pl = JSON.stringify({ name: myName, msg: txt, system: isSystem });
             
             Object.values(peers).forEach(p => { 
+                // Vérification stricte de l'état du canal
                 if(p.dc && p.dc.readyState === 'open') {
                     p.dc.send(pl); 
+                } else {
+                    console.warn("Chat non prêt pour ce peer");
                 }
             });
             
@@ -473,3 +495,5 @@
     </script>
 </body>
 </html>
+
+
