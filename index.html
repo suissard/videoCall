@@ -3,13 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Team Room Pro 🚀</title>
+    <title>Team Room 1-on-1 🚀</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         .hidden { display: none; }
         video { transform: scaleX(-1); object-fit: cover; }
-        .video-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1rem; }
+        /* Grille optimisée pour 2 max */
+        .video-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 1rem; }
+        
         /* Barres réseau */
         .signal-bars { display: flex; align-items: flex-end; gap: 2px; height: 16px; }
         .bar { width: 4px; background: #4b5563; border-radius: 1px; }
@@ -25,7 +27,7 @@
 
     <!-- LOGIN -->
     <div id="login" class="max-w-md mx-auto mt-20 bg-gray-800 p-8 rounded-xl text-center shadow-2xl border border-gray-700">
-        <h1 class="text-3xl font-bold mb-6 text-indigo-400">Team Room <i class="fas fa-video"></i></h1>
+        <h1 class="text-3xl font-bold mb-6 text-indigo-400">Team Room <span class="text-sm bg-gray-700 px-2 py-1 rounded text-white">1-on-1</span></h1>
         
         <div class="relative mb-4">
             <input id="roomId" type="text" placeholder="Nom du salon..." class="w-full p-3 bg-gray-700 rounded text-white outline-none focus:ring-2 focus:ring-indigo-500">
@@ -52,9 +54,9 @@
 
         <div class="flex flex-1 gap-4 overflow-hidden flex-col md:flex-row">
             <!-- Vidéos -->
-            <div id="videoContainer" class="flex-1 video-grid overflow-y-auto p-4 bg-black/20 rounded-xl border border-gray-800">
+            <div id="videoContainer" class="flex-1 video-grid overflow-y-auto p-4 bg-black/20 rounded-xl border border-gray-800 items-center justify-center">
                 <!-- Ma vidéo locale -->
-                <div class="relative bg-black rounded-xl overflow-hidden aspect-video shadow-lg border-2 border-indigo-500 group">
+                <div class="relative bg-black rounded-xl overflow-hidden aspect-video shadow-lg border-2 border-indigo-500 group w-full h-full max-h-[80vh]">
                     <video id="localVideo" autoplay muted playsinline class="w-full h-full"></video>
                     <span class="absolute bottom-2 left-2 bg-black/60 px-2 py-1 text-xs rounded font-bold backdrop-blur-sm">Moi</span>
                     <div class="absolute top-2 left-2 flex gap-1">
@@ -73,7 +75,7 @@
             <!-- Tchat -->
             <div class="w-full md:w-80 bg-gray-800 rounded-xl flex flex-col shadow-xl border border-gray-700 h-64 md:h-auto">
                 <div class="p-4 border-b border-gray-700 font-bold text-gray-300 flex justify-between items-center">
-                    <span>Chat</span> <span class="text-xs bg-gray-700 px-2 py-1 rounded-full" id="userCount">1 en ligne</span>
+                    <span>Chat</span> <span class="text-xs bg-gray-700 px-2 py-1 rounded-full" id="userCount">1/2</span>
                 </div>
                 <div id="chatBox" class="flex-1 p-4 overflow-y-auto space-y-3 flex flex-col text-sm bg-gray-900/50"></div>
                 <div class="p-3 border-t border-gray-700 flex gap-2 bg-gray-800 rounded-b-xl">
@@ -118,7 +120,8 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getDatabase, ref, set, push, remove, onChildAdded, onChildRemoved, onDisconnect, update } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+        // Ajout de 'get' pour vérifier la taille du salon
+        import { getDatabase, ref, set, push, remove, onChildAdded, onChildRemoved, onDisconnect, update, get } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyBMuMzxCWG98FJG76wUAbJNUXimc4RKn0E",
@@ -166,11 +169,9 @@
 
         // --- INIT AU CHARGEMENT ---
         window.addEventListener('load', () => {
-            // 1. Récupérer le pseudo sauvegardé
             const savedName = localStorage.getItem('chat_username');
             if (savedName) UI.usernameInput.value = savedName;
 
-            // 2. Vérifier l'URL pour le salon
             const params = new URLSearchParams(window.location.search);
             const urlRoom = params.get('room');
             if (urlRoom) UI.roomId.value = urlRoom;
@@ -178,17 +179,32 @@
 
         // --- LOGIQUE DE CONNEXION ---
         UI.joinBtn.onclick = async () => {
-            roomId = UI.roomId.value.trim().replace(/\s/g, ''); // Pas d'espaces dans l'ID
+            roomId = UI.roomId.value.trim().replace(/\s/g, ''); 
             myName = UI.usernameInput.value.trim() || 'Anonyme';
             
             if(!roomId) return alert("Nom de salon requis");
 
+            // VÉRIFICATION LIMITE 2 PERSONNES
+            try {
+                const usersRef = ref(db, `rooms/${roomId}/users`);
+                const snapshot = await get(usersRef);
+                if (snapshot.exists() && Object.keys(snapshot.val()).length >= 2) {
+                    return alert("⛔ Ce salon est plein (2 personnes max).");
+                }
+            } catch (e) {
+                console.error("Erreur vérification salon:", e);
+            }
+
             // Sauvegarde pseudo
             localStorage.setItem('chat_username', myName);
             
-            // Mise à jour URL sans recharger
-            const newUrl = `${window.location.pathname}?room=${roomId}`;
-            window.history.pushState({path: newUrl}, '', newUrl);
+            // CORRECTIF : Gestion de l'erreur pushState dans l'environnement 'blob'
+            try {
+                const newUrl = `${window.location.pathname}?room=${roomId}`;
+                window.history.pushState({path: newUrl}, '', newUrl);
+            } catch (e) {
+                console.warn("Impossible de mettre à jour l'URL (probablement en raison de l'environnement sandbox/blob) :", e);
+            }
 
             if (Notification.permission !== "granted") await Notification.requestPermission();
 
@@ -215,10 +231,11 @@
             setTimeout(() => { initialLoadDone = true; }, 2000);
         };
 
-        // Bouton copie lien
         UI.copyLinkBtn.onclick = () => {
             const r = UI.roomId.value.trim();
             if(!r) return;
+            // Dans un blob, ceci peut générer un lien étrange, mais ne plantera pas.
+            // En production réelle, cela fonctionnera correctement.
             const link = `${window.location.origin}${window.location.pathname}?room=${r}`;
             navigator.clipboard.writeText(link);
             UI.copyLinkBtn.innerHTML = '<i class="fas fa-check text-green-400"></i>';
@@ -255,13 +272,11 @@
                         const answer = await pc.createAnswer();
                         await pc.setLocalDescription(answer);
                         sendSignal(data.sender, { type: 'answer', sdp: answer, sender: myId });
-                        // Traiter les candidats en attente
                         peer.candidateQueue.forEach(c => pc.addIceCandidate(new RTCIceCandidate(c)).catch(console.error));
                         peer.candidateQueue = [];
 
                     } else if (data.type === 'answer') {
                         await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
-                        // Traiter les candidats en attente
                         peer.candidateQueue.forEach(c => pc.addIceCandidate(new RTCIceCandidate(c)).catch(console.error));
                         peer.candidateQueue = [];
 
@@ -269,7 +284,6 @@
                         if (pc.remoteDescription && pc.remoteDescription.type) {
                             await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
                         } else {
-                            // Mettre en file d'attente si la description n'est pas encore là
                             peer.candidateQueue.push(data.candidate);
                         }
                     }
@@ -280,7 +294,7 @@
 
         function updateUserCount() {
             const count = Object.keys(peers).length + 1;
-            UI.userCount.textContent = `${count} en ligne`;
+            UI.userCount.textContent = `${count}/2`;
         }
 
         // --- WEBRTC ---
@@ -288,7 +302,6 @@
             const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
             let dataChannel;
 
-            // Ajout de candidateQueue pour éviter le bug des vidéos noires
             peers[targetId] = { 
                 pc, 
                 name: targetName, 
@@ -302,7 +315,7 @@
             // UI Video
             const vidWrapper = document.createElement('div');
             vidWrapper.id = `wrap-${targetId}`;
-            vidWrapper.className = "relative bg-black rounded-xl overflow-hidden aspect-video shadow border border-gray-700";
+            vidWrapper.className = "relative bg-black rounded-xl overflow-hidden aspect-video shadow border border-gray-700 w-full h-full max-h-[80vh]";
             vidWrapper.innerHTML = `
                 <video id="vid-${targetId}" autoplay playsinline class="w-full h-full"></video>
                 <span class="absolute bottom-2 left-2 bg-black/60 px-2 py-1 text-xs rounded">${targetName}</span>
@@ -317,14 +330,12 @@
             pc.onicecandidate = (e) => e.candidate && sendSignal(targetId, { type: 'candidate', candidate: e.candidate.toJSON(), sender: myId });
 
             if (isInitiator) {
-                // Initiator crée le channel
                 dataChannel = pc.createDataChannel("chat");
                 setupDataChannel(dataChannel, targetId);
                 const offer = await pc.createOffer();
                 await pc.setLocalDescription(offer);
                 sendSignal(targetId, { type: 'offer', sdp: offer, sender: myId });
             } else {
-                // Receiver attend le channel
                 pc.ondatachannel = (e) => setupDataChannel(e.channel, targetId);
             }
         }
@@ -337,7 +348,7 @@
 
         function sendSignal(targetId, data) { push(ref(db, `rooms/${roomId}/signals/${targetId}`), data); }
 
-        // --- TCHAT (CORRECTIF) ---
+        // --- TCHAT ---
         function setupDataChannel(dc, userId) {
             peers[userId].dc = dc;
             dc.onopen = () => console.log("Chat open with", userId);
@@ -358,7 +369,6 @@
             
             const pl = JSON.stringify({ name: myName, msg: txt, system: isSystem });
             
-            // Envoyer à tous les peers connectés
             Object.values(peers).forEach(p => { 
                 if(p.dc && p.dc.readyState === 'open') {
                     p.dc.send(pl); 
@@ -385,7 +395,6 @@
             UI.chatBox.scrollTop = UI.chatBox.scrollHeight;
         }
 
-        // Listeners Chat
         UI.sendBtn.onclick = () => sendMessage();
         UI.msgInput.onkeypress = (e) => e.key === 'Enter' && sendMessage();
 
